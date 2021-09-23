@@ -7,6 +7,7 @@ const firebaseAdmin = require("firebase-admin");
 const db = firebaseAdmin.firestore();
 const Web3 = require("web3");
 const axios = require("axios");
+const Bottleneck = require("bottleneck");
 const paperAbi = require("../abi/paper.abi");
 
 /*---------------------
@@ -17,11 +18,14 @@ exports.scheduledFunction = functions.pubsub
   .schedule("0 */6 * * *")
   .onRun(async (context) => {
     /*--------------
-    Setup Web3
+    Setup Web3 & Vars
     --------------*/
     const dopeContractAddress = `0x8707276df042e89669d69a177d3da7dc78bd8723`;
     const paperContractAddress = `0x7aE1D57b58fA6411F32948314BadD83583eE0e8C`;
     const dopeCount = 8000;
+    const limiter = new Bottleneck({
+      minTime: 500,
+    });
 
     // Setup the provider.
     const web3 = new Web3(
@@ -40,17 +44,24 @@ exports.scheduledFunction = functions.pubsub
 
     function getDopeAssets(offset) {
       return new Promise(async (resolve, reject) => {
-        const response = await axios.get(
-          `https://api.opensea.io/api/v1/assets?asset_contract_address=${dopeContractAddress}&offset=${offset}&limit=50`
-        );
-        resolve(response.data.assets);
+        axios
+          .get(
+            `https://api.opensea.io/api/v1/assets?asset_contract_address=${dopeContractAddress}&offset=${offset}&limit=50`
+          )
+          .then((response) => {
+            resolve(response.data.assets);
+          })
+          .catch((error) => {
+            functions.logger.error(error);
+            resolve();
+          });
       });
     }
 
     // Query the Opensea api for batches of assets. Adjust the for loop to query less or more sets of data.
     for (let i = 0; i < dopeCount / 50; i++) {
       const offset = currentOffset;
-      const assets = await getDopeAssets(offset);
+      const assets = await limiter.schedule(() => getDopeAssets(offset));
 
       // Append these assets to the assets that we've already queried
       allDopeAssets = [...allDopeAssets, ...assets];
@@ -92,7 +103,11 @@ exports.scheduledFunction = functions.pubsub
       // Check if the asset has claimed its $PAPER (get that money)
       const claimed = await contract.methods
         .claimedByTokenId(asset.id)
-        .call({}, function (error, result) {});
+        .call({}, function (error, result) {
+          if (error) {
+            functions.logger.error(error);
+          }
+        });
 
       // If not claimed then add it to our list.
       if (!claimed) {
