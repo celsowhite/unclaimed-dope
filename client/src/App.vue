@@ -1,5 +1,5 @@
 <template>
-  <header class="page-header wysiwyg">
+  <header class="page-header wysiwyg" v-if="assets.length > 0">
     <h1>Unclaimed Dope</h1>
     <p>
       Found {{ assets.length }}
