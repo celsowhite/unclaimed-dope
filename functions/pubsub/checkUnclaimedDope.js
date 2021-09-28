@@ -15,7 +15,7 @@ Check Unclaimed Dope
 ---------------------*/
 
 exports.scheduledFunction = functions.pubsub
-  .schedule("0 */6 * * *")
+  .schedule("0 */3 * * *")
   .onRun(async (context) => {
     /*--------------
     Setup Web3 & Vars
